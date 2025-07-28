@@ -48,25 +48,23 @@ def aplicar_filtros(df):
     return df
 
 def agrupar_por_fiscalId(df):
+    columnas_requeridas = ['fiscalId', 'totalPendiente', 'nombre_empresa', 'direccionCliente', 'emailFacturacion']
+    columnas_presentes = [col for col in columnas_requeridas if col in df.columns]
+
     if 'fiscalId' not in df.columns:
         st.error("❌ La columna 'fiscalId' es obligatoria para agrupar.")
         return pd.DataFrame()
 
-    df['totalPendiente'] = pd.to_numeric(df.get('totalPendiente', 0), errors='coerce').fillna(0)
-    agrupado = df.groupby('fiscalId').agg({
-        'totalPendiente': 'sum',
-        'invoiceNumber': 'count',
-        'nombre_empresa': 'first',
-        'direccionCliente': 'first',
-        'emailFacturacion': 'first'
-    }).reset_index()
+    if len(columnas_presentes) <= 1:
+        st.error("❌ Faltan columnas necesarias para agrupar.")
+        return pd.DataFrame()
 
-    agrupado = agrupado.rename(columns={
-        'totalPendiente': 'Suma_Pendientes',
-        'invoiceNumber': 'Total_Facturas'
-    })
-    agrupado['Total_Facturas'] = agrupado['Total_Facturas'].astype(str) + ' factura(s) pendiente(s)'
-    return agrupado
+    agrupacion = {col: 'first' for col in columnas_presentes if col != 'fiscalId'}
+    if 'totalPendiente' in agrupacion:
+        agrupacion['totalPendiente'] = 'sum'
+
+    df_agrupado = df.groupby('fiscalId').agg(agrupacion).reset_index()
+    return df_agrupado
 
 def descargar_excel(df, nombre_archivo):
     buffer = BytesIO()
