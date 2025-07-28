@@ -39,12 +39,12 @@ def limpiar_dataframe(df):
 
 def filtrar_por_estado(df):
     if 'Estado_deuda' not in df.columns:
-        st.warning("La columna 'Estado_deuda' no está presente en el archivo.")
+        st.warning("⚠️ La columna 'Estado_deuda' no está presente en el archivo.")
         return df
 
     estados = df['Estado_deuda'].dropna().unique().tolist()
     if not estados:
-        st.warning("No hay estados disponibles para filtrar.")
+        st.warning("⚠️ No hay estados disponibles para filtrar.")
         return df
 
     seleccionados = st.multiselect("📌 Filtrar por Estado_deuda:", estados)
@@ -92,6 +92,10 @@ def formatear_columnas_fecha(df, columnas):
     return df
 
 def agrupar_por_fiscalId(df):
+    if 'fiscalId' not in df.columns:
+        st.error("❌ La columna 'fiscalId' es obligatoria para agrupar.")
+        return pd.DataFrame()
+
     columnas_factura = ['fechaDevolucion', 'totalPendiente', 'Estado_deuda', 'invoiceNumber']
     telefonos = ['telefonoContacto', 'telefonoCabecera', 'telefono3']
     datos_base = ['fiscalId', 'nombre_empresa', 'direccionCliente', 'emailFacturacion']
@@ -131,21 +135,35 @@ archivo = st.file_uploader("📤 Sube tu archivo Excel o CSV", type=['xlsx', 'cs
 
 if archivo:
     try:
-        if archivo.name.endswith('.xlsx'):
-            df = pd.read_excel(archivo)
-        else:
-            df = pd.read_csv(archivo, encoding='utf-8', delimiter=';', on_bad_lines='skip', engine='python')
+        with st.spinner("📂 Cargando archivo..."):
+            if archivo.name.endswith('.xlsx'):
+                df = pd.read_excel(archivo)
+            else:
+                df = pd.read_csv(archivo, encoding='utf-8', delimiter=';', on_bad_lines='skip', engine='python')
 
         st.success(f"✅ Archivo cargado con {df.shape[0]} filas y {df.shape[1]} columnas.")
+
         df = limpiar_dataframe(df)
+
         st.subheader("🔍 Vista previa del archivo limpio")
         st.dataframe(df.head())
 
         df = filtrar_por_estado(df)
         df = filtrar_por_fecha(df)
+
+        if df.empty:
+            st.error("❌ El filtro aplicado no devolvió resultados.")
+            st.stop()
+
         columnas_fecha = ['fechaDevolucion', 'fechaEmisionFactura', 'fecha_pago', 'fechaInicioFactura', 'fechaFinFactura']
         df = formatear_columnas_fecha(df, columnas_fecha)
-        df_final = agrupar_por_fiscalId(df)
+
+        with st.spinner("⏳ Agrupando datos..."):
+            df_final = agrupar_por_fiscalId(df)
+
+        if df_final.empty:
+            st.error("❌ No se pudo agrupar. Verifica que exista la columna 'fiscalId'.")
+            st.stop()
 
         st.subheader("📊 Resultado final")
         st.dataframe(df_final)
