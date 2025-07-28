@@ -32,20 +32,19 @@ def limpiar_texto(texto):
         texto = re.sub(r'\s+', ' ', texto).strip()
     return texto
 
-def limpiar_dataframe(df):
-    for col in df.select_dtypes(include=['object']).columns:
-        df[col] = df[col].apply(limpiar_texto)
-    return df
+df = limpiar_dataframe(df)
 
-def filtrar_por_estado(df):
-    if 'Estado_deuda' not in df.columns:
-        st.warning("⚠️ La columna 'Estado_deuda' no está presente en el archivo.")
-        return df
+st.subheader("🔍 Vista previa del archivo limpio")
+st.dataframe(df.head())
 
-    estados = df['Estado_deuda'].dropna().unique().tolist()
-    if not estados:
-        st.warning("⚠️ No hay estados disponibles para filtrar.")
-        return df
+# PRIMERO el filtro de fecha
+df = filtrar_por_fecha(df)
+# LUEGO el filtro de estado
+df = filtrar_por_estado(df)
+
+if df.empty:
+    st.error("❌ El filtro aplicado no devolvió resultados.")
+    st.stop()
 
     seleccionados = st.multiselect("📌 Filtrar por Estado_deuda:", estados)
     if seleccionados:
