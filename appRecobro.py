@@ -3,6 +3,10 @@ import pandas as pd
 import unicodedata
 import re
 from datetime import datetime
+from io import BytesIO
+
+st.set_page_config(page_title="🧹 Limpieza y Agrupación de Facturas", layout="wide")
+st.title("🧹 Limpieza y Agrupación de Facturas")
 
 correcciones_manual = {
     'Ã±': 'ñ', 'Ã‘': 'Ñ', 'Ã¡': 'á', 'ÃÁ': 'Á', 'Ã©': 'é', 'Ã‰': 'É',
@@ -35,9 +39,15 @@ def limpiar_dataframe(df):
 
 def filtrar_por_estado(df):
     if 'Estado_deuda' not in df.columns:
+        st.warning("La columna 'Estado_deuda' no está presente en el archivo.")
         return df
-    estados = df['Estado_deuda'].dropna().unique()
-    seleccionados = st.multiselect("Filtrar por Estado_deuda:", options=estados)
+
+    estados = df['Estado_deuda'].dropna().unique().tolist()
+    if not estados:
+        st.warning("No hay estados disponibles para filtrar.")
+        return df
+
+    seleccionados = st.multiselect("📌 Filtrar por Estado_deuda:", estados)
     if seleccionados:
         return df[df['Estado_deuda'].isin(seleccionados)]
     return df
@@ -45,29 +55,33 @@ def filtrar_por_estado(df):
 def filtrar_por_fecha(df):
     if 'fechaDevolucion' not in df.columns:
         return df
+
+    try:
+        df['fechaDevolucion'] = pd.to_datetime(df['fechaDevolucion'], errors='coerce', dayfirst=True)
+    except Exception as e:
+        st.error(f"❌ Error convirtiendo fechas: {e}")
+        return df
+
     opciones = {
         "No aplicar filtro": 4,
         "Antigüedad entre 9 y 30 días": 1,
         "Antigüedad entre 9 y 60 días": 2,
-        "Fecha mínima específica": 3,
+        "Fecha mínima específica": 3
     }
-    opcion = st.selectbox("Filtrar por fecha de devolución:", list(opciones.keys()))
+    seleccion = st.selectbox("📅 Filtro por fecha de devolución:", list(opciones.keys()))
     hoy = datetime.now()
-    df['fechaDevolucion'] = pd.to_datetime(df['fechaDevolucion'], errors='coerce', dayfirst=True)
 
-    if opciones[opcion] == 1:
-        desde = hoy - pd.Timedelta(days=30)
-        hasta = hoy - pd.Timedelta(days=9)
+    if opciones[seleccion] == 1:
+        desde, hasta = hoy - pd.Timedelta(days=30), hoy - pd.Timedelta(days=9)
         return df[(df['fechaDevolucion'] >= desde) & (df['fechaDevolucion'] <= hasta)]
 
-    elif opciones[opcion] == 2:
-        desde = hoy - pd.Timedelta(days=60)
-        hasta = hoy - pd.Timedelta(days=9)
+    elif opciones[seleccion] == 2:
+        desde, hasta = hoy - pd.Timedelta(days=60), hoy - pd.Timedelta(days=9)
         return df[(df['fechaDevolucion'] >= desde) & (df['fechaDevolucion'] <= hasta)]
 
-    elif opciones[opcion] == 3:
-        fecha = st.date_input("Selecciona la fecha mínima:")
-        return df[df['fechaDevolucion'] >= pd.to_datetime(fecha)]
+    elif opciones[seleccion] == 3:
+        fecha_input = st.date_input("📅 Selecciona la fecha mínima:")
+        return df[df['fechaDevolucion'] >= pd.to_datetime(fecha_input)]
 
     return df
 
@@ -107,39 +121,44 @@ def agrupar_por_fiscalId(df):
             fila[f'totalPendiente_{i}'] = row.get('totalPendiente', '')
             fila[f'Estado_deuda_{i}'] = row.get('Estado_deuda', '')
             fila[f'invoiceNumber_{i}'] = row.get('invoiceNumber', '')
+
         agrupado.append(fila)
 
     return pd.DataFrame(agrupado)
 
-# Interfaz Streamlit
-st.title("🧹 Limpieza y Agrupación de Facturas")
-
-archivo = st.file_uploader("Sube un archivo Excel o CSV", type=['xlsx', 'csv'])
+# === APP ===
+archivo = st.file_uploader("📤 Sube tu archivo Excel o CSV", type=['xlsx', 'csv'])
 
 if archivo:
-    if archivo.name.endswith('.xlsx'):
-        df = pd.read_excel(archivo)
-    else:
-        df = pd.read_csv(archivo, encoding='utf-8', delimiter=';', on_bad_lines='skip', engine='python')
+    try:
+        if archivo.name.endswith('.xlsx'):
+            df = pd.read_excel(archivo)
+        else:
+            df = pd.read_csv(archivo, encoding='utf-8', delimiter=';', on_bad_lines='skip', engine='python')
 
-    st.success("Archivo cargado correctamente.")
-    df = limpiar_dataframe(df)
-    df = filtrar_por_estado(df)
-    df = filtrar_por_fecha(df)
-    columnas_fecha = ['fechaDevolucion', 'fechaEmisionFactura', 'fecha_pago', 'fechaInicioFactura', 'fechaFinFactura']
-    df = formatear_columnas_fecha(df, columnas_fecha)
-    df_final = agrupar_por_fiscalId(df)
+        st.success(f"✅ Archivo cargado con {df.shape[0]} filas y {df.shape[1]} columnas.")
+        df = limpiar_dataframe(df)
+        st.subheader("🔍 Vista previa del archivo limpio")
+        st.dataframe(df.head())
 
-    st.subheader("📊 Resultado Final")
-    st.dataframe(df_final)
+        df = filtrar_por_estado(df)
+        df = filtrar_por_fecha(df)
+        columnas_fecha = ['fechaDevolucion', 'fechaEmisionFactura', 'fecha_pago', 'fechaInicioFactura', 'fechaFinFactura']
+        df = formatear_columnas_fecha(df, columnas_fecha)
+        df_final = agrupar_por_fiscalId(df)
 
-    nombre_archivo = st.text_input("📥 Nombre para guardar el archivo Excel (sin .xlsx)", "resultado")
+        st.subheader("📊 Resultado final")
+        st.dataframe(df_final)
 
-    if st.button("💾 Generar Excel"):
-        from io import BytesIO
-        output = BytesIO()
-        df_final.to_excel(output, index=False, engine='openpyxl')
-        st.download_button(label="📥 Descargar archivo Excel",
-                           data=output.getvalue(),
-                           file_name=f"{nombre_archivo}.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        nombre_archivo = st.text_input("💾 Nombre del archivo de salida:", "facturas_limpias")
+        if st.button("📥 Descargar Excel"):
+            output = BytesIO()
+            df_final.to_excel(output, index=False, engine='openpyxl')
+            st.download_button(label="⬇️ Descargar archivo Excel",
+                               data=output.getvalue(),
+                               file_name=f"{nombre_archivo}.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as e:
+        st.error(f"❌ Error al procesar el archivo: {e}")
+else:
+    st.info("Por favor sube un archivo para comenzar.")
